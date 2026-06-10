@@ -506,6 +506,11 @@ const WorktreeCard = React.memo(function WorktreeCard({
         event.stopPropagation()
         return
       }
+      if (isDeleting) {
+        event.preventDefault()
+        event.stopPropagation()
+        return
+      }
       // Why: route sidebar clicks through the shared activation path so the
       // back/forward stack stays complete for the primary worktree navigation
       // surface instead of only recording palette-driven switches.
@@ -516,7 +521,14 @@ const WorktreeCard = React.memo(function WorktreeCard({
       }
       onActivate?.()
     },
-    [worktree.id, isSshDisconnected, onActivate, onImmediateActivate, onSelectionGesture]
+    [
+      worktree.id,
+      isDeleting,
+      isSshDisconnected,
+      onActivate,
+      onImmediateActivate,
+      onSelectionGesture
+    ]
   )
 
   const handleRenameTitle = useCallback(
@@ -580,11 +592,34 @@ const WorktreeCard = React.memo(function WorktreeCard({
   }, [])
 
   const unreadTooltip = worktree.isUnread ? 'Mark read' : 'Mark unread'
-  const childWorkspaceLabel = `${lineageChildCount} child ${
-    lineageChildCount === 1 ? 'workspace' : 'workspaces'
-  }`
+  const lineageChildAriaLabel =
+    lineageChildCount === 1
+      ? lineageCollapsed
+        ? translate(
+            'auto.components.sidebar.WorktreeList.20bebf9c7f',
+            'Show {{value0}} child workspace',
+            { value0: lineageChildCount }
+          )
+        : translate(
+            'auto.components.sidebar.WorktreeList.e97297cb75',
+            'Hide {{value0}} child workspace',
+            { value0: lineageChildCount }
+          )
+      : lineageCollapsed
+        ? translate(
+            'auto.components.sidebar.WorktreeList.c1f4a31623',
+            'Show {{value0}} child workspaces',
+            { value0: lineageChildCount }
+          )
+        : translate(
+            'auto.components.sidebar.WorktreeList.0cd15956d4',
+            'Hide {{value0}} child workspaces',
+            { value0: lineageChildCount }
+          )
   const childWorkspaceShortLabel = `${lineageChildCount} ${
-    lineageChildCount === 1 ? 'child' : 'children'
+    lineageChildCount === 1
+      ? translate('auto.components.sidebar.WorktreeList.0c6ee14f23', 'child')
+      : translate('auto.components.sidebar.WorktreeList.045a8aed48', 'children')
   }`
   const showLineageChildChip = lineageChildCount > 0 && onLineageToggle !== undefined
 
@@ -830,7 +865,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       className={cn(
         'group relative flex items-start gap-0.5 pl-0 pr-1.5 pt-1.5 pb-2 cursor-pointer transition-[background-color,border-color,opacity,box-shadow] duration-200 outline-none select-none',
         flushSurface ? 'ml-1 w-[calc(100%-0.25rem)]' : 'ml-1',
-        isMultiSelected ? 'rounded-sm' : 'rounded-lg',
+        'rounded-lg',
         isActiveSurface
           ? 'bg-black/[0.08] shadow-[0_1px_2px_rgba(0,0,0,0.04)] border border-black/[0.015] dark:bg-white/[0.10] dark:border-border/40 dark:shadow-[0_1px_2px_rgba(0,0,0,0.03)]'
           : isMultiSelected
@@ -1186,8 +1221,14 @@ const WorktreeCard = React.memo(function WorktreeCard({
           <div className="mt-0.5 flex items-start gap-1.5 rounded border border-amber-500/25 bg-amber-500/5 px-1.5 py-1 text-[10.5px] leading-snug text-amber-700 dark:text-amber-300">
             <AlertTriangle className="mt-[1px] size-3 shrink-0" />
             <span className="min-w-0 flex-1">
-              {remoteBranchConflict.remote}/{remoteBranchConflict.branchName}{' '}
-              {translate('auto.components.sidebar.WorktreeCard.a88c92d0e3', 'already exists.')}
+              {translate(
+                'auto.components.sidebar.WorktreeCard.a88c92d0e3',
+                '{{value0}}/{{value1}} already exists.',
+                {
+                  value0: remoteBranchConflict.remote,
+                  value1: remoteBranchConflict.branchName
+                }
+              )}
             </span>
           </div>
         )}
@@ -1220,7 +1261,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
                   variant="ghost"
                   size="xs"
                   className="relative z-10 h-[18px] max-w-[8rem] gap-1 rounded-md border border-worktree-sidebar-border bg-worktree-sidebar px-1.5 text-[10px] font-medium leading-none text-muted-foreground shadow-none hover:bg-worktree-sidebar-accent hover:text-foreground focus-visible:ring-1 focus-visible:ring-worktree-sidebar-ring"
-                  aria-label={`${lineageCollapsed ? 'Show' : 'Hide'} ${childWorkspaceLabel}`}
+                  aria-label={lineageChildAriaLabel}
                   aria-expanded={!lineageCollapsed}
                   onClick={onLineageToggle}
                 >
