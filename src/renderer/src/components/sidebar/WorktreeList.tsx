@@ -555,6 +555,8 @@ function HostSectionHeader({
       >
         <Server className="size-3.5 shrink-0 text-muted-foreground" />
         <HostHeaderHealthIcon health={row.health} />
+        {/* Why: the badge hugs the label like repo headers do — anchoring it
+            right would leave it floating beside the hover-only controls. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
           <span className="min-w-0 truncate text-[12px] font-semibold leading-none text-foreground">
             {row.label}
@@ -569,8 +571,8 @@ function HostSectionHeader({
               {detail.text}
             </span>
           ) : null}
+          <SectionMetricsBadge count={row.count} />
         </div>
-        <SectionMetricsBadge count={row.count} />
         <div className="flex size-4 shrink-0 items-center justify-center text-muted-foreground/60 opacity-0 transition-opacity group-hover/host-header:opacity-100">
           <ChevronDown
             className={cn('size-3.5 transition-transform', row.collapsed && '-rotate-90')}
@@ -1108,6 +1110,12 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     [computeWorktreeDropForGroup]
   )
   const renderRows = useMemo(() => buildRenderableRows(rows), [rows])
+  // Why: rows inside a host section get a left inset so projects and
+  // workspaces visibly belong to the machine card above them.
+  const hostSectionIndentClass = useMemo(
+    () => (renderRows.some((row) => row.type === 'host-header') ? 'pl-3' : undefined),
+    [renderRows]
+  )
   const firstHeaderIndex = useMemo(
     () => renderRows.findIndex((row) => row.type === 'header' || row.type === 'host-header'),
     [renderRows]
@@ -2964,6 +2972,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   ref={measureVirtualRowElement}
                   className={cn(
                     'left-0 right-0',
+                    hostSectionIndentClass,
                     // Why: the inter-group spacer only applies while the header
                     // scrolls in normally; the pinned header drops it to sit
                     // flush at the top. The swap fires when the header row
@@ -3531,6 +3540,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   ref={measureVirtualRowElement}
                   className={cn(
                     'absolute left-0 right-0 top-0',
+                    hostSectionIndentClass,
                     worktreeDragState.draggingWorktreeId !== null &&
                       'transition-transform duration-150 ease-out will-change-transform'
                   )}
@@ -3563,7 +3573,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   data-worktree-virtual-row-start={vItem.start}
                   data-index={vItem.index}
                   ref={measureVirtualRowElement}
-                  className="absolute left-0 right-0 top-0"
+                  className={cn('absolute left-0 right-0 top-0', hostSectionIndentClass)}
                   style={{ transform: getVirtualRowTransform(vItem.start) }}
                 >
                   <ImportedWorktreesVisibilityLine
@@ -3593,7 +3603,10 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   data-worktree-virtual-row-start={vItem.start}
                   data-index={vItem.index}
                   ref={measureVirtualRowElement}
-                  className="absolute left-0 right-0 top-0 px-2 pb-1.5"
+                  className={cn(
+                    'absolute left-0 right-0 top-0 px-2 pb-1.5',
+                    hostSectionIndentClass
+                  )}
                   style={{ transform: getVirtualRowTransform(vItem.start) }}
                 >
                   <PendingWorktreeRow creationId={row.creationId} />
@@ -3621,6 +3634,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                 data-workspace-status={itemWorkspaceStatus ?? undefined}
                 className={cn(
                   'absolute left-0 right-0 top-0',
+                  hostSectionIndentClass,
                   worktreeDragState.draggingWorktreeId !== null &&
                     'transition-transform duration-150 ease-out will-change-transform'
                 )}
