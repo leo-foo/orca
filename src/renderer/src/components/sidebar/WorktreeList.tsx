@@ -8,7 +8,6 @@ import type { Range } from '@tanstack/react-virtual'
 import {
   AlertTriangle,
   ChevronDown,
-  Circle,
   CircleX,
   Ellipsis,
   Eye,
@@ -17,6 +16,7 @@ import {
   Loader2,
   Plus,
   Server,
+  ServerOff,
   Shapes,
   SlidersHorizontal,
   Trash2
@@ -175,6 +175,7 @@ import { callRuntimeRpc } from '@/runtime/runtime-rpc-client'
 import { splitWorktreeSortOrderByHost } from '@/lib/worktree-sort-order-host-split'
 import {
   getSettingsFocusedExecutionHostId,
+  type ExecutionHostId,
   parseExecutionHostId
 } from '../../../../shared/execution-host'
 import { getRepoHeaderCreateState } from './repo-header-create-state'
@@ -203,6 +204,8 @@ import {
   getWorktreeCardContentIndent
 } from './worktree-list-indentation'
 import { addHostSectionRows, type HostHeaderRow, type HostSectionRow } from './host-section-rows'
+import { orderHostSectionOptions } from './host-section-order'
+import { useHostHeaderDrag } from './host-header-drag'
 import { buildSidebarHostOptions } from './sidebar-host-options'
 import { HostSectionHeaderMenu } from './HostSectionHeaderMenu'
 import { translate } from '@/i18n/i18n'
@@ -410,6 +413,8 @@ type VirtualizedWorktreeViewportProps = {
   // (filtered out / collapsed-only). Visible-only ids would silently drop the
   // hidden repos on reorder.
   allRepoIds: string[]
+  onReorderHostSections: (orderedHostIds: ExecutionHostId[]) => void
+  onHostDragActiveChange: (active: boolean) => void
   prCache: Record<string, unknown> | null
   workspaceStatuses: readonly WorkspaceStatusDefinition[]
   projectGroups?: readonly ProjectGroup[]
@@ -480,15 +485,12 @@ function HostHeaderHealthIcon({
   health: HostHeaderRow['health']
 }): React.JSX.Element | null {
   // Why: healthy is the default state — indicating it adds noise. Only states
-  // needing attention (connecting, blocked, error, disconnected) get a mark.
+  // needing active attention get a separate mark.
   if (health === 'connecting') {
     return <Loader2 className="size-3 shrink-0 animate-spin text-muted-foreground" />
   }
   if (health === 'blocked' || health === 'error') {
     return <AlertTriangle className="size-3 shrink-0 text-destructive" />
-  }
-  if (health === 'disconnected') {
-    return <Circle className="size-2 shrink-0 fill-current text-muted-foreground/55" />
   }
   return null
 }
@@ -513,6 +515,12 @@ function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boo
       isWarning: true
     }
   }
+  if (row.health === 'disconnected') {
+    return {
+      text: translate('auto.components.sidebar.WorktreeList.hostDisconnected', 'Disconnected'),
+      isWarning: false
+    }
+  }
   // Why: the transport suffix only earns space on remote hosts; "This
   // computer" on Local Mac is noise.
   if (row.kind !== 'local') {
@@ -523,12 +531,17 @@ function getHostHeaderDetail(row: HostHeaderRow): { text: string; isWarning: boo
 
 function HostSectionHeader({
   row,
-  onToggle
+  onToggle,
+  onDragPointerDown,
+  dragging
 }: {
   row: HostHeaderRow
   onToggle: () => void
+  onDragPointerDown?: (event: React.PointerEvent<HTMLElement>) => void
+  dragging?: boolean
 }): React.JSX.Element {
   const isBlocked = row.health === 'blocked'
+  const isDisconnected = row.health === 'disconnected'
   const detail = getHostHeaderDetail(row)
   return (
     <div className="px-2 pt-1">
@@ -538,13 +551,19 @@ function HostSectionHeader({
       <div
         role="button"
         tabIndex={0}
+        data-host-header-drag-id={row.hostId}
         aria-expanded={!row.collapsed}
         className={cn(
-          'group/host-header flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2 text-left',
+          'group/host-header flex h-8 w-full cursor-pointer items-center gap-2 rounded-md border px-2 text-left transition-all',
+          onDragPointerDown && 'cursor-grab active:cursor-grabbing',
           isBlocked
             ? 'border-destructive/40 bg-destructive/10'
-            : 'border-worktree-sidebar-border bg-worktree-sidebar-accent/70'
+            : isDisconnected
+              ? 'border-worktree-sidebar-border/70 bg-worktree-sidebar-accent/35 text-muted-foreground'
+              : 'border-worktree-sidebar-border bg-worktree-sidebar-accent/70',
+          dragging && 'pointer-events-none opacity-0'
         )}
+        onPointerDown={onDragPointerDown}
         onClick={onToggle}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
@@ -553,12 +572,21 @@ function HostSectionHeader({
           }
         }}
       >
-        <Server className="size-3.5 shrink-0 text-muted-foreground" />
+        {isDisconnected ? (
+          <ServerOff className="size-3.5 shrink-0 text-muted-foreground/80" />
+        ) : (
+          <Server className="size-3.5 shrink-0 text-muted-foreground" />
+        )}
         <HostHeaderHealthIcon health={row.health} />
         {/* Why: the badge hugs the label like repo headers do — anchoring it
             right would leave it floating beside the hover-only controls. */}
         <div className="flex min-w-0 flex-1 items-baseline gap-1.5">
-          <span className="min-w-0 truncate text-[12px] font-semibold leading-none text-foreground">
+          <span
+            className={cn(
+              'min-w-0 truncate text-[12px] font-semibold leading-none',
+              isDisconnected ? 'text-muted-foreground' : 'text-foreground'
+            )}
+          >
             {row.label}
           </span>
           {detail ? (
@@ -578,7 +606,9 @@ function HostSectionHeader({
             className={cn('size-3.5 transition-transform', row.collapsed && '-rotate-90')}
           />
         </div>
-        <HostSectionHeaderMenu row={row} />
+        <span data-host-header-action="">
+          <HostSectionHeaderMenu row={row} />
+        </span>
       </div>
     </div>
   )
@@ -866,6 +896,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   worktreeLineageById,
   repoOrder,
   allRepoIds,
+  onReorderHostSections,
+  onHostDragActiveChange,
   prCache,
   workspaceStatuses,
   projectGroups = EMPTY_PROJECT_GROUPS,
@@ -1001,6 +1033,22 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
     onCommit: commitRepoReorder,
     getScrollContainer: () => scrollRef.current
   })
+  const orderedHostIds = useMemo(
+    () =>
+      rows
+        .filter((row): row is HostHeaderRow => row.type === 'host-header')
+        .map((row) => row.hostId),
+    [rows]
+  )
+  const hostDrag = useHostHeaderDrag({
+    orderedHostIds,
+    onCommit: onReorderHostSections,
+    getScrollContainer: () => scrollRef.current
+  })
+  useEffect(() => {
+    onHostDragActiveChange(hostDrag.state.draggingHostId !== null)
+  }, [hostDrag.state.draggingHostId, onHostDragActiveChange])
+  useEffect(() => () => onHostDragActiveChange(false), [onHostDragActiveChange])
   const worktreeDragGroups = useMemo(() => getWorktreeDragGroups(rows), [rows])
   const worktreeDragUnitGroups = useMemo(() => getWorktreeDragUnitGroups(rows), [rows])
   const worktreeLineageDragRows = useMemo(
@@ -2864,6 +2912,17 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
               style={{ top: `${repoDrag.state.dropIndicatorY}px` }}
             />
           ) : null}
+          {hostDrag.state.draggingHostId !== null && hostDrag.state.dropIndicatorY !== null ? (
+            <div
+              role="presentation"
+              className="pointer-events-none absolute left-3 right-2 z-40 flex h-3 -translate-y-1/2 items-center"
+              style={{ top: `${hostDrag.state.dropIndicatorY}px` }}
+            >
+              <span className="size-1.5 shrink-0 rounded-full bg-worktree-sidebar-ring shadow-[0_0_0_2px_var(--worktree-sidebar)]" />
+              <span className="h-0.5 flex-1 rounded-full bg-worktree-sidebar-ring shadow-[0_0_0_2px_var(--worktree-sidebar)]" />
+              <span className="size-1.5 shrink-0 rounded-full bg-worktree-sidebar-ring shadow-[0_0_0_2px_var(--worktree-sidebar)]" />
+            </div>
+          ) : null}
           {worktreeDragState.draggingWorktreeId !== null &&
           worktreeDragState.dropIndicatorY !== null ? (
             <div
@@ -2917,6 +2976,12 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                   <HostSectionHeader
                     row={row}
                     onToggle={() => toggleGroupWithScrollAnchor(row.key)}
+                    onDragPointerDown={
+                      orderedHostIds.length > 1
+                        ? (e) => hostDrag.onHandlePointerDown(e, row.hostId)
+                        : undefined
+                    }
+                    dragging={hostDrag.state.draggingHostId === row.hostId}
                   />
                 </div>
               )
@@ -3689,6 +3754,9 @@ const WorktreeList = React.memo(function WorktreeList({
   const currentSidebarWorktreeId = activeWorktreeId
   const groupBy = useAppStore((s) => s.groupBy)
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
+  const visibleWorkspaceHostIds = useAppStore((s) => s.visibleWorkspaceHostIds)
+  const workspaceHostOrder = useAppStore((s) => s.workspaceHostOrder)
+  const setWorkspaceHostOrder = useAppStore((s) => s.setWorkspaceHostOrder)
   const workspaceStatuses = useAppStore((s) => s.workspaceStatuses)
   const sortBy = useAppStore((s) => s.sortBy)
   const setSortBy = useAppStore((s) => s.setSortBy)
@@ -4032,6 +4100,7 @@ const WorktreeList = React.memo(function WorktreeList({
       hideDefaultBranchWorkspace,
       repoMap,
       workspaceHostScope,
+      visibleWorkspaceHostIds,
       defaultHostId: getSettingsFocusedExecutionHostId(settings),
       worktreeLineageById
     })
@@ -4052,6 +4121,7 @@ const WorktreeList = React.memo(function WorktreeList({
     showSleepingWorkspaces,
     hideDefaultBranchWorkspace,
     workspaceHostScope,
+    visibleWorkspaceHostIds,
     settings,
     repoMap,
     tabsByWorktree,
@@ -4224,20 +4294,57 @@ const WorktreeList = React.memo(function WorktreeList({
       }),
     [repos, sshTargetLabels, sshConnectionStates, settings, runtimeStatusByEnvironmentId]
   )
+  const orderedHostOptions = useMemo(
+    () => orderHostSectionOptions(hostOptions, workspaceHostOrder),
+    [hostOptions, workspaceHostOrder]
+  )
+  const [hostDragActive, setHostDragActive] = useState(false)
+  const handleReorderHostSections = useCallback(
+    (orderedVisibleHostIds: ExecutionHostId[]) => {
+      const visibleHostIds = new Set(orderedVisibleHostIds)
+      const hostOptionIds = orderedHostOptions.map((host) => host.id)
+      const knownHostIds = new Set(hostOptionIds)
+      const nextOrder: ExecutionHostId[] = [...orderedVisibleHostIds]
+      const seen = new Set(nextOrder)
+      // Why: dragging only covers rendered host sections. Keep non-rendered
+      // SSH/runtime hosts in the saved preference so they return in the same
+      // place when their workspaces become visible again.
+      for (const hostId of [...workspaceHostOrder, ...hostOptionIds]) {
+        if (!knownHostIds.has(hostId) || visibleHostIds.has(hostId) || seen.has(hostId)) {
+          continue
+        }
+        nextOrder.push(hostId)
+        seen.add(hostId)
+      }
+      setWorkspaceHostOrder(nextOrder)
+    },
+    [orderedHostOptions, setWorkspaceHostOrder, workspaceHostOrder]
+  )
   const sectionRows = useMemo(
     () =>
       addHostSectionRows({
         rows,
-        hostOptions,
+        hostOptions: orderedHostOptions,
         workspaceHostScope,
+        visibleWorkspaceHostIds,
         defaultHostId,
-        collapsedHostKeys: effectiveCollapsedGroups
+        collapsedHostKeys: effectiveCollapsedGroups,
+        forceCollapseHosts: hostDragActive
       }),
-    [defaultHostId, effectiveCollapsedGroups, hostOptions, rows, workspaceHostScope]
+    [
+      defaultHostId,
+      effectiveCollapsedGroups,
+      hostDragActive,
+      orderedHostOptions,
+      rows,
+      visibleWorkspaceHostIds,
+      workspaceHostScope
+    ]
   )
   // Why: status headers change during wake (inactive -> active). Key only on
   // the grouping mode so row identity survives those ordinary status moves.
-  const viewportResetKey = `group:${groupBy}:host:${workspaceHostScope}:lineage`
+  const visibleHostResetKey = visibleWorkspaceHostIds?.join(',') ?? 'all'
+  const viewportResetKey = `group:${groupBy}:host:${visibleHostResetKey}:lineage`
 
   // Why: derive the rendered item order from the post-buildRows() row list,
   // not the flat `worktrees` array, because grouping (groupBy: 'repo' or
@@ -4669,13 +4776,19 @@ const WorktreeList = React.memo(function WorktreeList({
   // worktree is a default-branch row and who just toggled hide on would see
   // "No workspaces found" with no way back short of reopening the filter menu.
   const filterState = useMemo(
-    () => ({ showSleepingWorkspaces, filterRepoIds, hideDefaultBranchWorkspace }),
-    [showSleepingWorkspaces, filterRepoIds, hideDefaultBranchWorkspace]
+    () => ({
+      showSleepingWorkspaces,
+      filterRepoIds,
+      hideDefaultBranchWorkspace,
+      visibleWorkspaceHostIds
+    }),
+    [showSleepingWorkspaces, filterRepoIds, hideDefaultBranchWorkspace, visibleWorkspaceHostIds]
   )
   const hasFilters = sidebarHasActiveFilters(filterState)
   const setShowSleepingWorkspaces = useAppStore((s) => s.setShowSleepingWorkspaces)
   const setHideDefaultBranchWorkspace = useAppStore((s) => s.setHideDefaultBranchWorkspace)
   const setFilterRepoIds = useAppStore((s) => s.setFilterRepoIds)
+  const setVisibleWorkspaceHostIds = useAppStore((s) => s.setVisibleWorkspaceHostIds)
 
   const clearFilters = useCallback(() => {
     const actions = computeClearFilterActions(filterState)
@@ -4688,7 +4801,16 @@ const WorktreeList = React.memo(function WorktreeList({
     if (actions.resetHideDefaultBranchWorkspace) {
       setHideDefaultBranchWorkspace(false)
     }
-  }, [setShowSleepingWorkspaces, setFilterRepoIds, setHideDefaultBranchWorkspace, filterState])
+    if (actions.resetVisibleWorkspaceHostIds) {
+      setVisibleWorkspaceHostIds(null)
+    }
+  }, [
+    setShowSleepingWorkspaces,
+    setFilterRepoIds,
+    setHideDefaultBranchWorkspace,
+    setVisibleWorkspaceHostIds,
+    filterState
+  ])
 
   const handleRevealCurrentWorkspaceRequest = useCallback(
     (event: Event) => {
@@ -4845,6 +4967,8 @@ const WorktreeList = React.memo(function WorktreeList({
         worktreeLineageById={worktreeLineageById}
         repoOrder={repoOrder}
         allRepoIds={allRepoIds}
+        onReorderHostSections={handleReorderHostSections}
+        onHostDragActiveChange={setHostDragActive}
         prCache={prCache}
         workspaceStatuses={workspaceStatuses}
         projectGroups={projectGroups}
