@@ -69,6 +69,7 @@ import { deriveRunningAgentSendTargets } from '@/lib/running-agent-targets'
 import { rightSidebarShowsPullRequestData } from '@/lib/right-sidebar-visibility'
 import {
   type Row,
+  type ProjectGroupingModel,
   type WorktreeGroupBy,
   ALL_GROUP_KEY,
   PINNED_GROUP_KEY,
@@ -417,6 +418,7 @@ type VirtualizedWorktreeViewportProps = {
   onHostDragActiveChange: (active: boolean) => void
   prCache: Record<string, unknown> | null
   workspaceStatuses: readonly WorkspaceStatusDefinition[]
+  projectGrouping?: ProjectGroupingModel
   projectGroups?: readonly ProjectGroup[]
   onMoveWorktreeToStatus: (worktreeId: string, status: WorkspaceStatus) => void
   onMoveWorktreesToStatus: (worktreeIds: readonly string[], status: WorkspaceStatus) => void
@@ -900,6 +902,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
   onHostDragActiveChange,
   prCache,
   workspaceStatuses,
+  projectGrouping,
   projectGroups = EMPTY_PROJECT_GROUPS,
   onMoveWorktreeToStatus,
   onMoveWorktreesToStatus,
@@ -1591,7 +1594,11 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
         worktreeMap,
         true,
         settings,
-        projectGroups
+        projectGroups,
+        new Set(),
+        new Map(),
+        [],
+        projectGrouping
       ).filter((r): r is Extract<Row, { type: 'item' }> => r.type === 'item')
       if (worktreeRows.length === 0) {
         return
@@ -1638,7 +1645,8 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
       worktreeLineageById,
       worktreeMap,
       settings,
-      projectGroups
+      projectGroups,
+      projectGrouping
     ]
   )
 
@@ -4140,6 +4148,12 @@ const WorktreeList = React.memo(function WorktreeList({
   // Why: manual repo header order is bound to state.repos. Recent/Smart derive
   // header order from the sorted visible worktree stream instead.
   const repos = useAppStore((s) => s.repos)
+  const projects = useAppStore((s) => s.projects)
+  const projectHostSetups = useAppStore((s) => s.projectHostSetups)
+  const projectGrouping = useMemo(
+    () => ({ projects, projectHostSetups }),
+    [projectHostSetups, projects]
+  )
   const projectGroups = useAppStore((s) => s.projectGroups ?? EMPTY_PROJECT_GROUPS)
   const effectiveCollapsedGroups = useMemo(() => {
     if (!agentSendTargetWorktreeId) {
@@ -4160,7 +4174,8 @@ const WorktreeList = React.memo(function WorktreeList({
         prCache,
         workspaceStatuses,
         settings,
-        projectGroups
+        projectGroups,
+        projectGrouping
       )) {
         next.delete(groupKey)
       }
@@ -4190,6 +4205,7 @@ const WorktreeList = React.memo(function WorktreeList({
     groupBy,
     prCache,
     projectGroups,
+    projectGrouping,
     repoMap,
     settings,
     workspaceStatuses,
@@ -4262,7 +4278,8 @@ const WorktreeList = React.memo(function WorktreeList({
         projectGroups,
         placeholderRepoIds,
         importedWorktreesByRepo,
-        pendingCreations
+        pendingCreations,
+        projectGrouping
       ),
     [
       groupBy,
@@ -4277,6 +4294,7 @@ const WorktreeList = React.memo(function WorktreeList({
       worktreeMap,
       settings,
       projectGroups,
+      projectGrouping,
       placeholderRepoIds,
       importedWorktreesByRepo,
       pendingCreations
@@ -4971,6 +4989,7 @@ const WorktreeList = React.memo(function WorktreeList({
         onHostDragActiveChange={setHostDragActive}
         prCache={prCache}
         workspaceStatuses={workspaceStatuses}
+        projectGrouping={projectGrouping}
         projectGroups={projectGroups}
         onMoveWorktreeToStatus={moveWorktreeToStatus}
         onMoveWorktreesToStatus={moveWorktreesToStatus}
