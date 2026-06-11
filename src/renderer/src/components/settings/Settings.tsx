@@ -1453,7 +1453,11 @@ function Settings(): React.JSX.Element {
                     searchEntries={getSectionSearchEntries('advanced')}
                   >
                     {isSectionMounted('advanced') ? (
-                      <AdvancedPane settings={settings} updateSettings={updateSettings} />
+                      <AdvancedPane
+                        settings={settings}
+                        updateSettings={updateSettings}
+                        fetchSettings={fetchSettings}
+                      />
                     ) : null}
                   </SettingsSection>
                 ) : null}

@@ -1497,6 +1497,14 @@ const api = {
     set: (args: Record<string, unknown>): Promise<unknown> =>
       ipcRenderer.invoke('settings:set', args),
 
+    exportPortable: (): Promise<unknown> => ipcRenderer.invoke('settings:exportPortable'),
+
+    previewPortableImport: (): Promise<unknown> =>
+      ipcRenderer.invoke('settings:previewPortableImport'),
+
+    importPortable: (filePath: string): Promise<unknown> =>
+      ipcRenderer.invoke('settings:importPortable', filePath),
+
     listFonts: (): Promise<string[]> => ipcRenderer.invoke('settings:listFonts'),
 
     previewGhosttyImport: (): Promise<GhosttyImportPreview> =>
